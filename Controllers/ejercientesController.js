@@ -1,47 +1,6 @@
-import nodemailer from "nodemailer";
-import { randomBytes, pbkdf2Sync } from "crypto";
+﻿import { randomBytes, pbkdf2Sync } from "crypto";
 import EjercienteModel from "../Models/ejercientes.js";
-
-const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_SECURE,
-  SMTP_USER,
-  SMTP_PASS,
-  SMTP_FROM,
-} = process.env;
-
-const transporter = SMTP_HOST && SMTP_USER && SMTP_PASS
-  ? nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT) || 587,
-      secure: SMTP_SECURE === "true",
-      auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASS,
-      },
-    })
-  : null;
-
-async function enviarCorreo(destinatario, asunto, mensaje) {
-  if (!transporter) {
-    console.warn("[mailer] Configuracion SMTP incompleta. No se envio correo.");
-    return false;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM || SMTP_USER,
-      to: destinatario,
-      subject: asunto,
-      text: mensaje,
-    });
-    return true;
-  } catch (error) {
-    console.error("[mailer] Error enviando correo:", error);
-    return false;
-  }
-}
+import { sendMail } from "./services/mailer.js";
 
 function hashPassword(contrasena) {
   if (!contrasena) return contrasena;
@@ -111,7 +70,25 @@ export const cambiarContrasena = async (req, res) => {
       { where: { IdEjerciente: req.params.id } }
     );
     if (!updated) return res.status(404).json({ error: "No encontrado" });
-    res.json({ message: "Contrasena actualizada" });
+
+    const ejerciente = await EjercienteModel.findByPk(req.params.id);
+
+    let mailStatus = { ok: false, error: "Sin destinatario o contrasena" };
+    if (ejerciente?.email) {
+      mailStatus = await sendMail({
+        to: ejerciente.email,
+        subject: "Tu nueva contrasena de acceso",
+        text: `Hola ${ejerciente.Nombre ?? ""}, tu nueva contrasena es: ${contrasena}`,
+      });
+      if (!mailStatus.ok) {
+        console.warn(
+          "[mailer] La contrasena se actualizo pero el correo no pudo enviarse:",
+          mailStatus.error
+        );
+      }
+    }
+
+    res.json({ message: "Contrasena actualizada", mailStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -127,19 +104,22 @@ export const crearEjerciente = async (req, res) => {
 
     const nuevo = await EjercienteModel.create(payload);
 
+    let mailStatus = { ok: false, error: "Sin destinatario o contrasena" };
     if (nuevo.email && plainPassword) {
-      const correoEnviado = await enviarCorreo(
-        nuevo.email,
-        "Tu contrasena de acceso",
-        `Hola ${nuevo.Nombre ?? ""}, tu contrasena es: ${plainPassword}`
-      );
-
-      if (!correoEnviado) {
-        console.warn("[mailer] Registro creado pero el correo no pudo enviarse.");
+      mailStatus = await sendMail({
+        to: nuevo.email,
+        subject: "Tu contrasena de acceso",
+        text: `Hola ${nuevo.Nombre ?? ""}, tu contrasena es: ${plainPassword}`,
+      });
+      if (!mailStatus.ok) {
+        console.warn(
+          "[mailer] Registro creado pero el correo no pudo enviarse:",
+          mailStatus.error
+        );
       }
     }
 
-    res.status(201).json(sanitizeEjercienteResponse(nuevo));
+    res.status(201).json({ data: sanitizeEjercienteResponse(nuevo), mailStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
