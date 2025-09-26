@@ -4,6 +4,8 @@ import EjercienteModel from "../Models/ejercientes.js";
 const PBKDF2_ITERATIONS = 100000;
 const PBKDF2_KEY_LENGTH = 32; // bytes -> 256-bit hash
 const PBKDF2_SALT_SIZE = 16; // bytes
+const NIVEL_DEFAULT = 3;
+const NIVELES_VALIDOS = new Set([1, 2, 3]);
 
 function hashPassword(contrasena) {
   if (!contrasena) return contrasena;
@@ -16,7 +18,76 @@ function sanitizeEjercienteResponse(ejerciente) {
   if (!ejerciente) return ejerciente;
   const data = ejerciente.toJSON ? ejerciente.toJSON() : { ...ejerciente };
   delete data.contrasena;
+  if (data.Nivel !== undefined && data.Nivel !== null) {
+    const parsedNivel = Number(data.Nivel);
+    if (!Number.isNaN(parsedNivel)) {
+      data.Nivel = parsedNivel;
+    }
+  }
   return data;
+}
+
+function getRequesterNivel(req) {
+  const candidates = [
+    req.user?.Nivel,
+    req.user?.nivel,
+    req.auth?.Nivel,
+    req.auth?.nivel,
+    req.headers?.['x-user-nivel'],
+    req.headers?.['x-nivel'],
+    req.headers?.['x-admin-nivel'],
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isInteger(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+function parseNivel(value) {
+  const parsed = Number(value);
+  if (Number.isInteger(parsed) && NIVELES_VALIDOS.has(parsed)) {
+    return parsed;
+  }
+  return null;
+}
+
+function normalizeNivelFromPayload(req, payload, { mode }) {
+  const hasNivel = Object.prototype.hasOwnProperty.call(payload ?? {}, 'Nivel');
+  const requesterNivel = getRequesterNivel(req);
+
+  if (!hasNivel) {
+    if (mode === 'create') {
+      payload.Nivel = NIVEL_DEFAULT;
+    }
+    return;
+  }
+
+  if (requesterNivel === 1) {
+    const requestedNivel = parseNivel(payload.Nivel);
+    if (requestedNivel === null) {
+      const error = new Error('Nivel invalido');
+      error.statusCode = 400;
+      error.details = {
+        allowed: Array.from(NIVELES_VALIDOS),
+      };
+      throw error;
+    }
+    payload.Nivel = requestedNivel;
+    return;
+  }
+
+  if (mode === 'create') {
+    payload.Nivel = NIVEL_DEFAULT;
+    return;
+  }
+
+  const error = new Error('No tienes permisos para modificar el nivel');
+  error.statusCode = 403;
+  error.details = { requiredNivel: 1 };
+  throw error;
 }
 
 function handleSequelizeError(res, err) {
@@ -121,6 +192,17 @@ export const cambiarContrasena = async (req, res) => {
 export const crearEjerciente = async (req, res) => {
   try {
     const payload = limpiarPayload(req.body);
+    try {
+      normalizeNivelFromPayload(req, payload, { mode: 'create' });
+    } catch (customError) {
+      if (customError?.statusCode) {
+        return res.status(customError.statusCode).json({
+          error: customError.message,
+          ...(customError.details ?? {}),
+        });
+      }
+      throw customError;
+    }
     if (payload.estado) {
       payload.estado = String(payload.estado).trim().toLowerCase();
       if (!ESTADOS_VALIDOS.includes(payload.estado)) {
@@ -164,6 +246,20 @@ export const obtenerEjerciente = async (req, res) => {
 export const actualizarEjerciente = async (req, res) => {
   try {
     const payload = limpiarPayload(req.body);
+
+    if (Object.prototype.hasOwnProperty.call(payload, "Nivel")) {
+      try {
+        normalizeNivelFromPayload(req, payload, { mode: 'update' });
+      } catch (customError) {
+        if (customError?.statusCode) {
+          return res.status(customError.statusCode).json({
+            error: customError.message,
+            ...(customError.details ?? {}),
+          });
+        }
+        throw customError;
+      }
+    }
 
     if (payload.contrasena) {
       payload.contrasena = hashPassword(payload.contrasena);
