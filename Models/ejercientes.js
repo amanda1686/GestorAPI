@@ -29,7 +29,7 @@ const EjercienteModel = db.define(
     web: { type: DataTypes.STRING, allowNull: true },
     tasapi: { type: DataTypes.JSON, allowNull: true },
     visados: { type: DataTypes.STRING, allowNull: true },
-    IdCoapi: { type: DataTypes.STRING, allowNull: true },
+    IdCoapi: {type: DataTypes.ENUM('Colegiado', 'Asociado', 'Invitado'), allowNull: false, defaultValue: 'Colegiado'},
     Nivel: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 3 },
     imgcom: { type: DataTypes.STRING, allowNull: true },
     estado: { type: DataTypes.ENUM("activo", "pendiente", "inactivo"), allowNull: false, defaultValue: "pendiente" },
