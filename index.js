@@ -3,7 +3,6 @@ import cors from 'cors';
 import express from 'express';
 import db from './database/db.js';
 import ejercientesRoutes from './Routes/ejercientes.js';
-import { verifyTransporter } from './Controllers/services/mailer.js';
 
 const app = express();
 const port = 3001;
@@ -11,10 +10,6 @@ const port = 3001;
 app.use(express.json());
 app.use(cors());
 app.use('/ejercientes', ejercientesRoutes);
-
-verifyTransporter().catch((err) => {
-  console.error('[mailer] Verificacion SMTP fallida:', err);
-});
 
 db.authenticate()
   .then(() => console.log('[db] Conexion a MySQL establecida'))

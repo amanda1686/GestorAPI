@@ -1,11 +1,14 @@
 ﻿import { randomBytes, pbkdf2Sync } from "crypto";
 import EjercienteModel from "../Models/ejercientes.js";
-import { sendMail } from "./services/mailer.js";
+
+const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_KEY_LENGTH = 32; // bytes -> 256-bit hash
+const PBKDF2_SALT_SIZE = 16; // bytes
 
 function hashPassword(contrasena) {
   if (!contrasena) return contrasena;
-  const salt = randomBytes(16).toString("hex");
-  const hash = pbkdf2Sync(contrasena, salt, 100000, 64, "sha512").toString("hex");
+  const salt = randomBytes(PBKDF2_SALT_SIZE).toString("hex");
+  const hash = pbkdf2Sync(contrasena, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, "sha512").toString("hex");
   return `${salt}:${hash}`;
 }
 
@@ -14,6 +17,44 @@ function sanitizeEjercienteResponse(ejerciente) {
   const data = ejerciente.toJSON ? ejerciente.toJSON() : { ...ejerciente };
   delete data.contrasena;
   return data;
+}
+
+function handleSequelizeError(res, err) {
+  if (err?.name === "SequelizeValidationError" || err?.name === "SequelizeUniqueConstraintError") {
+    const details = (err.errors ?? []).map(({ message, path, value, validatorKey, validatorName, type }) => ({
+      message,
+      path,
+      value,
+      validatorKey,
+      validatorName,
+      type,
+    }));
+    const messages = details.length > 0 ? details.map((item) => item.message) : [err.message].filter(Boolean);
+    return res.status(400).json({
+      error: "Validation error",
+      messages,
+      details,
+    });
+  }
+
+  console.error("[ejercientes] Error inesperado:", err);
+  const sqlMessage = err?.parent?.sqlMessage ?? err?.original?.sqlMessage;
+  const details = err?.errors
+    ? err.errors.map(({ message, path, value, validatorKey, validatorName, type }) => ({
+        message,
+        path,
+        value,
+        validatorKey,
+        validatorName,
+        type,
+      }))
+    : undefined;
+
+  return res.status(500).json({
+    error: err.message,
+    ...(sqlMessage ? { sqlMessage } : {}),
+    ...(details ? { details } : {}),
+  });
 }
 
 const ESTADOS_VALIDOS = ["activo", "pendiente", "inactivo"];
@@ -71,57 +112,33 @@ export const cambiarContrasena = async (req, res) => {
     );
     if (!updated) return res.status(404).json({ error: "No encontrado" });
 
-    const ejerciente = await EjercienteModel.findByPk(req.params.id);
-
-    let mailStatus = { ok: false, error: "Sin destinatario o contrasena" };
-    if (ejerciente?.email) {
-      mailStatus = await sendMail({
-        to: ejerciente.email,
-        subject: "Tu nueva contrasena de acceso",
-        text: `Hola ${ejerciente.Nombre ?? ""}, tu nueva contrasena es: ${contrasena}`,
-      });
-      if (!mailStatus.ok) {
-        console.warn(
-          "[mailer] La contrasena se actualizo pero el correo no pudo enviarse:",
-          mailStatus.error
-        );
-      }
-    }
-
-    res.json({ message: "Contrasena actualizada", mailStatus });
+    res.json({ message: "Contrasena actualizada" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleSequelizeError(res, err);
   }
 };
 
 export const crearEjerciente = async (req, res) => {
   try {
     const payload = limpiarPayload(req.body);
-    const plainPassword = payload.contrasena;
-    if (plainPassword) {
-      payload.contrasena = hashPassword(plainPassword);
+    if (payload.estado) {
+      payload.estado = String(payload.estado).trim().toLowerCase();
+      if (!ESTADOS_VALIDOS.includes(payload.estado)) {
+        return res.status(400).json({
+          error: "Estado invalido",
+          allowed: ESTADOS_VALIDOS,
+        });
+      }
+    }
+    if (payload.contrasena) {
+      payload.contrasena = hashPassword(payload.contrasena);
     }
 
     const nuevo = await EjercienteModel.create(payload);
 
-    let mailStatus = { ok: false, error: "Sin destinatario o contrasena" };
-    if (nuevo.email && plainPassword) {
-      mailStatus = await sendMail({
-        to: nuevo.email,
-        subject: "Tu contrasena de acceso",
-        text: `Hola ${nuevo.Nombre ?? ""}, tu contrasena es: ${plainPassword}`,
-      });
-      if (!mailStatus.ok) {
-        console.warn(
-          "[mailer] Registro creado pero el correo no pudo enviarse:",
-          mailStatus.error
-        );
-      }
-    }
-
-    res.status(201).json({ data: sanitizeEjercienteResponse(nuevo), mailStatus });
+    res.status(201).json({ data: sanitizeEjercienteResponse(nuevo) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleSequelizeError(res, err);
   }
 };
 
@@ -130,7 +147,7 @@ export const listarEjercientes = async (_req, res) => {
     const ejercientes = await EjercienteModel.findAll();
     res.json(ejercientes.map(sanitizeEjercienteResponse));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleSequelizeError(res, err);
   }
 };
 
@@ -140,7 +157,7 @@ export const obtenerEjerciente = async (req, res) => {
     if (!ejerciente) return res.status(404).json({ error: "No encontrado" });
     res.json(sanitizeEjercienteResponse(ejerciente));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleSequelizeError(res, err);
   }
 };
 
@@ -160,7 +177,7 @@ export const actualizarEjerciente = async (req, res) => {
     const actualizado = await EjercienteModel.findByPk(req.params.id);
     res.json({ message: "Actualizado", data: sanitizeEjercienteResponse(actualizado) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleSequelizeError(res, err);
   }
 };
 
@@ -172,7 +189,7 @@ export const eliminarEjerciente = async (req, res) => {
     if (!deleted) return res.status(404).json({ error: "No encontrado" });
     res.json({ message: "Eliminado" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleSequelizeError(res, err);
   }
 };
 
@@ -182,7 +199,8 @@ export const actualizarEstado = async (req, res) => {
     const { id } = req.params;
     const { estado } = req.body;
 
-    if (!ESTADOS_VALIDOS.includes(estado)) {
+    const normalizedEstado = String(estado ?? "").trim().toLowerCase();
+    if (!ESTADOS_VALIDOS.includes(normalizedEstado)) {
       return res.status(400).json({ error: "Estado invalido" });
     }
 
@@ -191,11 +209,12 @@ export const actualizarEstado = async (req, res) => {
       return res.status(404).json({ error: "Ejerciente no encontrado" });
     }
 
-    ejerciente.estado = estado;
+    ejerciente.estado = normalizedEstado;
     await ejerciente.save();
 
     res.json({ message: "Estado actualizado", data: sanitizeEjercienteResponse(ejerciente) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleSequelizeError(res, err);
   }
 };
+
