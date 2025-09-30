@@ -1,5 +1,5 @@
-import { Router } from "express";
-import { listarTestigos } from "../Controllers/testigos";
+﻿import { Router } from "express";
+import { listarTestigos } from "../Controllers/testigos.js";
 
 const router = Router();
 

@@ -1,4 +1,4 @@
-import db from "../database/db.js";
+﻿import db from "../database/db.js";
 import { DataTypes } from "sequelize";
 import EjercienteModel from "./ejercientes.js";
 
@@ -6,13 +6,13 @@ const TestigosModel = db.define(
   "testigos",
   {
     id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-    Num_api: { type: DataTypes.STRING(50), allowNull: true },
-    fecha: { type: DataTypes.DATEONLY, allowNull: true },
+    Num_api: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    Fecha: { type: DataTypes.DATEONLY, allowNull: true },
     Tipo: { type: DataTypes.STRING(50), allowNull: true },
-    cp: { type: DataTypes.STRING(5), allowNull: true },
-    Dir: { type: DataTypes.STRING(5), allowNull: true },
+    CP: { type: DataTypes.STRING(10), allowNull: true },
+    Dir: { type: DataTypes.STRING(255), allowNull: true },
     zona: { type: DataTypes.STRING(100), allowNull: true },
-    Sup_m2: { type: DataTypes.DECIMAL(255), allowNull: true },
+    Sup_m2: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     Eur_m2: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     Operacion: { type: DataTypes.STRING(30), allowNull: true },
   },
@@ -36,15 +36,16 @@ export default TestigosModel;
 export function validarTestigo(data = {}) {
   const errores = [];
 
-  const cp = data.cp;
+  const cp = data.CP ?? data.cp;
   if (cp && !/^\d{4,10}$/.test(String(cp))) {
-    errores.push("cp debe contener solo digitos (4-10 caracteres)");
+    errores.push("CP debe contener solo digitos (4-10 caracteres)");
   }
 
-  if (data.fecha) {
-    const parsedDate = Date.parse(data.fecha);
+  const fecha = data.Fecha ?? data.fecha;
+  if (fecha) {
+    const parsedDate = Date.parse(fecha);
     if (Number.isNaN(parsedDate)) {
-      errores.push("fecha debe tener un formato valido (YYYY-MM-DD)");
+      errores.push("Fecha debe tener un formato valido (YYYY-MM-DD)");
     }
   }
 
