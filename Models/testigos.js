@@ -12,7 +12,6 @@ const TestigosModel = db.define(
     CP: { type: DataTypes.STRING(10), allowNull: true },
     Dir: { type: DataTypes.STRING(255), allowNull: true },
     zona: { type: DataTypes.STRING(100), allowNull: true },
-    Sup_m2: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     Eur_m2: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     Operacion: { type: DataTypes.STRING(30), allowNull: true },
   },
