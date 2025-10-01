@@ -1,29 +1,42 @@
-import { randomBytes, pbkdf2Sync } from 'crypto';
+import 'dotenv/config';
 import mysql from 'mysql2/promise';
+import { randomBytes, pbkdf2Sync } from 'crypto';
 
 const ITER = 100000;
-const LEN = 32;
-const config = { host, port, user, password, database };
-
+const KEY_LEN = 32;
 const hashPassword = (plain) => {
   const salt = randomBytes(16).toString('hex');
-  const hash = pbkdf2Sync(plain, salt, ITER, LEN, 'sha512').toString('hex');
+  const hash = pbkdf2Sync(plain, salt, ITER, KEY_LEN, 'sha512').toString('hex');
   return `${salt}:${hash}`;
 };
 
 const main = async () => {
-  const pool = await mysql.createPool(config);
-  const [rows] = await pool.query(
+  const conn = await mysql.createConnection({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  });
+
+  const [rows] = await conn.execute(
     'SELECT IdEjerciente, Num_api FROM ejercientes WHERE contrasena IS NULL AND Num_api IS NOT NULL'
   );
-  for (const row of rows) {
-    const hashed = hashPassword(String(row.Num_api));
-    await pool.query(
+
+  for (const { IdEjerciente, Num_api } of rows) {
+    const plain = String(Num_api);
+    const hashed = hashPassword(plain);
+    await conn.execute(
       'UPDATE ejercientes SET contrasena = ? WHERE IdEjerciente = ?',
-      [hashed, row.IdEjerciente]
+      [hashed, IdEjerciente]
     );
   }
-  await pool.end();
+
+  await conn.end();
+  console.log('Contraseñas actualizadas.');
 };
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
