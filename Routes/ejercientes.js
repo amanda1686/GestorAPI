@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import {
   cambiarContrasena,
   crearEjerciente,
@@ -6,17 +6,20 @@ import {
   obtenerEjerciente,
   actualizarEjerciente,
   eliminarEjerciente,
-  actualizarEstado
+  actualizarEstado,
 } from "../Controllers/ejercientesController.js";
+import { authenticate, requireNivel } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
-router.put("/:id/contrasena", cambiarContrasena);
-router.post("/", crearEjerciente);
+router.use(authenticate);
+
+router.put("/:id/contrasena", requireNivel(1), cambiarContrasena);
+router.post("/", requireNivel(1), crearEjerciente);
 router.get("/", listarEjercientes);
 router.get("/:id", obtenerEjerciente);
-router.put("/:id", actualizarEjerciente);
-router.delete("/:id", eliminarEjerciente);
-router.put("/:id/estado", actualizarEstado);
+router.put("/:id", requireNivel(1), actualizarEjerciente);
+router.delete("/:id", requireNivel(1), eliminarEjerciente);
+router.put("/:id/estado", requireNivel(1), actualizarEstado);
 
 export default router;

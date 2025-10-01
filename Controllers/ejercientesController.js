@@ -1,18 +1,7 @@
-﻿import { randomBytes, pbkdf2Sync } from "crypto";
 import EjercienteModel from "../Models/ejercientes.js";
-
-const PBKDF2_ITERATIONS = 100000;
-const PBKDF2_KEY_LENGTH = 32; // bytes -> 256-bit hash
-const PBKDF2_SALT_SIZE = 16; // bytes
+import { hashPassword, validatePasswordStrength, verifyPassword } from "../Utils/auth.js";
 const NIVEL_DEFAULT = 3;
 const NIVELES_VALIDOS = new Set([1, 2, 3]);
-
-function hashPassword(contrasena) {
-  if (!contrasena) return contrasena;
-  const salt = randomBytes(PBKDF2_SALT_SIZE).toString("hex");
-  const hash = pbkdf2Sync(contrasena, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, "sha512").toString("hex");
-  return `${salt}:${hash}`;
-}
 
 function sanitizeEjercienteResponse(ejerciente) {
   if (!ejerciente) return ejerciente;
@@ -172,16 +161,34 @@ function limpiarPayload(body) {
 
 export const cambiarContrasena = async (req, res) => {
   try {
-    const { contrasena } = req.body;
+    const { contrasena, contrasenaActual } = req.body ?? {};
     if (!contrasena) {
       return res.status(400).json({ error: "La contrasena es obligatoria" });
     }
 
-    const [updated] = await EjercienteModel.update(
-      { contrasena: hashPassword(contrasena) },
-      { where: { IdEjerciente: req.params.id } }
-    );
-    if (!updated) return res.status(404).json({ error: "No encontrado" });
+    const ejerciente = await EjercienteModel.findByPk(req.params.id);
+    if (!ejerciente) {
+      return res.status(404).json({ error: "No encontrado" });
+    }
+
+    if (contrasenaActual) {
+      const matches = verifyPassword(contrasenaActual, ejerciente.contrasena);
+      if (!matches) {
+        return res.status(400).json({ error: "La contrasena actual no es correcta" });
+      }
+    }
+
+    const passwordCheck = validatePasswordStrength(contrasena);
+    if (!passwordCheck.valid) {
+      return res.status(400).json({ error: "Contrasena invalida", details: passwordCheck.errors });
+    }
+
+    if (verifyPassword(contrasena, ejerciente.contrasena)) {
+      return res.status(400).json({ error: "La nueva contrasena debe ser diferente a la anterior" });
+    }
+
+    ejerciente.contrasena = hashPassword(contrasena);
+    await ejerciente.save();
 
     res.json({ message: "Contrasena actualizada" });
   } catch (err) {
@@ -212,9 +219,16 @@ export const crearEjerciente = async (req, res) => {
         });
       }
     }
-    if (payload.contrasena) {
-      payload.contrasena = hashPassword(payload.contrasena);
+    if (!payload.contrasena) {
+      return res.status(400).json({ error: "La contrasena es obligatoria" });
     }
+
+    const passwordCheck = validatePasswordStrength(payload.contrasena);
+    if (!passwordCheck.valid) {
+      return res.status(400).json({ error: "Contrasena invalida", details: passwordCheck.errors });
+    }
+
+    payload.contrasena = hashPassword(payload.contrasena);
 
     const nuevo = await EjercienteModel.create(payload);
 
@@ -262,6 +276,10 @@ export const actualizarEjerciente = async (req, res) => {
     }
 
     if (payload.contrasena) {
+      const passwordCheck = validatePasswordStrength(payload.contrasena);
+      if (!passwordCheck.valid) {
+        return res.status(400).json({ error: "Contrasena invalida", details: passwordCheck.errors });
+      }
       payload.contrasena = hashPassword(payload.contrasena);
     }
 
