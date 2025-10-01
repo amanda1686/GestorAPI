@@ -1,4 +1,4 @@
-import db from "../database/db.js";
+﻿import db from "../database/db.js";
 import { DataTypes } from "sequelize";
 
 const NIVELES_PERMITIDOS = new Set([1, 2, 3]);
@@ -22,8 +22,8 @@ const EjercienteModel = db.define(
     email: { type: DataTypes.STRING, allowNull: true },
     url: { type: DataTypes.STRING, allowNull: true },
     imagen: { type: DataTypes.STRING, allowNull: true },
-    usuario: { type: DataTypes.STRING, allowNull: true },
-    contrasena: { type: DataTypes.STRING, allowNull: true },
+    usuario: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+    contrasena: { type: DataTypes.STRING(255), allowNull: false },
     Colegio: { type: DataTypes.STRING, allowNull: true },
     apilocal: { type: DataTypes.STRING, allowNull: true },
     web: { type: DataTypes.STRING, allowNull: true },
@@ -56,3 +56,5 @@ export function validarEjerciente(data) {
   }
   return errores;
 }
+
+
