@@ -12,7 +12,17 @@ const port = process.env.PORT || 3001;
 
 app.use(express.json({ limit: '10kb' }));
 app.use(cors());
-app.options('*', cors());
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    const requestHeaders = req.headers['access-control-request-headers'];
+    res.header('Access-Control-Allow-Origin', req.headers.origin ?? '*');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', requestHeaders ?? 'Content-Type, Authorization');
+    res.header('Access-Control-Max-Age', '86400');
+    return res.sendStatus(204);
+  }
+  return next();
+});
 app.use('/auth', authRoutes);
 app.use('/ejercientes', ejercientesRoutes);
 app.use('/tasaciones', tasacionesRoutes);
