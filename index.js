@@ -8,7 +8,7 @@ import testigosRoutes from './Routes/testigos.js';
 import authRoutes from './Routes/auth.js';
 
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 
 app.use(express.json({ limit: '10kb' }));
 app.use(cors());
