@@ -8,7 +8,7 @@ import testigosRoutes from './Routes/testigos.js';
 import authRoutes from './Routes/auth.js';
 
 const app = express();
-const port = process.env.PORT || 3001;
+const port = Number(process.env.PORT ?? 3001);
 
 app.use(express.json({ limit: '10kb' }));
 app.use(cors());
@@ -36,7 +36,6 @@ app.get('/', (req, res) => {
   res.send('Servidor Express funcionando');
 });
 
-app.listen(port, () => {
-  console.log(`Servidor escuchando en http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Servidor escuchando en http://0.0.0.0:${port}`);
 });
-
