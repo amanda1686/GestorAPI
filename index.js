@@ -12,6 +12,7 @@ const port = process.env.PORT || 3001;
 
 app.use(express.json({ limit: '10kb' }));
 app.use(cors());
+app.options('*', cors());
 app.use('/auth', authRoutes);
 app.use('/ejercientes', ejercientesRoutes);
 app.use('/tasaciones', tasacionesRoutes);

@@ -1,8 +1,11 @@
-import EjercienteModel from "../Models/ejercientes.js";
+﻿import EjercienteModel from "../Models/ejercientes.js";
 import { verifyAccessToken, sanitizeUser } from "../Utils/auth.js";
 
 export async function authenticate(req, res, next) {
   try {
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
     const authHeader = req.headers?.authorization ?? "";
     const [scheme, token] = authHeader.split(" ");
     if (!token || scheme?.toLowerCase() !== "bearer") {
