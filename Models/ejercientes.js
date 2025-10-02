@@ -51,7 +51,7 @@ export function validarEjerciente(data) {
     if (Number.isNaN(nivelNumero)) {
       errores.push("Nivel debe ser un numero");
     } else if (!NIVELES_PERMITIDOS.has(nivelNumero)) {
-      errores.push("Nivel debe ser 1, 2 y 3");
+      errores.push("Nivel debe ser 1, 2 o 3");
     }
   }
   return errores;
