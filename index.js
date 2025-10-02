@@ -6,7 +6,6 @@ import ejercientesRoutes from './Routes/ejercientes.js';
 import tasacionesRoutes from './Routes/tasaciones.js';
 import testigosRoutes from './Routes/testigos.js';
 import authRoutes from './Routes/auth.js';
-import morgan from 'morgan';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
@@ -31,12 +30,23 @@ const corsOptions = {
 
 app.use(express.json({ limit: '10kb' }));
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
-app.use(morgan('combined')); // antes de tus rutas
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  return next();
+});
 
 app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
   next();
+});
+
+app.use((err, req, res, next) => {
+  if (err?.message === 'Origen no permitido por CORS') {
+    return res.status(403).json({ error: err.message });
+  }
+  return next(err);
 });
 
 app.use('/auth', authRoutes);
@@ -55,3 +65,4 @@ app.get('/', (req, res) => {
 app.listen(port, '0.0.0.0', () => {
   console.log(`Servidor escuchando en http://0.0.0.0:${port}`);
 });
+
