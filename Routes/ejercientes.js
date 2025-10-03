@@ -18,7 +18,7 @@ router.put("/:id/contrasena", requireNivel(1), cambiarContrasena);
 router.post("/", requireNivel(1), crearEjerciente);
 router.get("/", listarEjercientes);
 router.get("/:id", obtenerEjerciente);
-router.put("/:id", requireNivel(1), actualizarEjerciente);
+router.put("/:id", requireNivel(1, { allowSelfUpdate: true }), actualizarEjerciente);
 router.delete("/:id", requireNivel(1), eliminarEjerciente);
 router.put("/:id/estado", requireNivel(1), actualizarEstado);
 

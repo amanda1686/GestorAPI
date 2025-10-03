@@ -32,12 +32,18 @@ export async function authenticate(req, res, next) {
   }
 }
 
-export function requireNivel(requiredNivel = 1) {
+export function requireNivel(requiredNivel = 1, options = {}) {
   return (req, res, next) => {
     const nivel = Number(req.user?.Nivel ?? req.user?.nivel);
     if (!Number.isInteger(nivel)) {
       return res.status(403).json({ error: "Nivel del usuario no disponible" });
     }
+    
+    // Permitir actualización de datos propios
+    if (options.allowSelfUpdate && req.params.id && req.auth.IdEjerciente === Number(req.params.id)) {
+      return next();
+    }
+    
     if (nivel !== requiredNivel) {
       return res.status(403).json({
         error: "No tienes permisos para realizar esta accion",

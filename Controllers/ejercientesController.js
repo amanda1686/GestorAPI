@@ -259,9 +259,57 @@ export const obtenerEjerciente = async (req, res) => {
 
 export const actualizarEjerciente = async (req, res) => {
   try {
-    const payload = limpiarPayload(req.body);
+    const id = Number(req.params?.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID invalido" });
+    }
 
-    if (Object.prototype.hasOwnProperty.call(payload, "Nivel")) {
+    const ejerciente = await EjercienteModel.findByPk(id);
+    if (!ejerciente) {
+      return res.status(404).json({ error: "No encontrado" });
+    }
+
+    const isSelfUpdate = req.auth.IdEjerciente === id;
+    const isAdmin = req.user.Nivel === 1;
+
+    // Determinar qué campos puede actualizar según su rol
+    let allowedFields;
+    if (isAdmin) {
+      allowedFields = [...CAMPOS_PERMITIDOS]; // Todos los campos permitidos
+    } else if (isSelfUpdate) {
+      // Los usuarios normales solo pueden actualizar sus datos personales básicos
+      allowedFields = [
+        "Nombre",
+        "Apellidos",
+        "telefono_1",
+        "telefono_2",
+        "Movil",
+        "email",
+        "url",
+        "imagen",
+        "Direccion",
+        "cp",
+        "Localidad",
+        "Provincia"
+      ];
+    } else {
+      return res.status(403).json({
+        error: "No tienes permisos para actualizar este ejerciente"
+      });
+    }
+
+    const payload = {};
+    for (const campo of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, campo)) {
+        payload[campo] = req.body[campo];
+      }
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return res.status(400).json({ error: "No se recibieron campos para actualizar" });
+    }
+
+    if (isAdmin && Object.prototype.hasOwnProperty.call(payload, "Nivel")) {
       try {
         normalizeNivelFromPayload(req, payload, { mode: 'update' });
       } catch (customError) {
@@ -283,13 +331,11 @@ export const actualizarEjerciente = async (req, res) => {
       payload.contrasena = hashPassword(payload.contrasena);
     }
 
-    const [updated] = await EjercienteModel.update(payload, {
-      where: { IdEjerciente: req.params.id },
+    await ejerciente.update(payload);
+    res.json({ 
+      message: "Actualizado", 
+      data: sanitizeEjercienteResponse(ejerciente) 
     });
-    if (!updated) return res.status(404).json({ error: "No encontrado" });
-
-    const actualizado = await EjercienteModel.findByPk(req.params.id);
-    res.json({ message: "Actualizado", data: sanitizeEjercienteResponse(actualizado) });
   } catch (err) {
     return handleSequelizeError(res, err);
   }
