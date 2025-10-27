@@ -5,7 +5,7 @@ const PBKDF2_ITERATIONS = 100000;
 const PBKDF2_KEY_LENGTH = 32;
 const PBKDF2_SALT_SIZE = 16;
 const PBKDF2_DIGEST = "sha512";
-const PASSWORD_MIN_LENGTH = 10;
+const PASSWORD_REQUIRED_LENGTH = 6;
 
 export function hashPassword(plain) {
   const toHash = String(plain ?? "").trim();
@@ -31,15 +31,14 @@ export function verifyPassword(plain, stored) {
 }
 
 export function validatePasswordStrength(password) {
-  const value = String(password ?? "");
+  const value = String(password ?? "").trim();
   const errors = [];
-  if (value.length < PASSWORD_MIN_LENGTH) {
-    errors.push(`Debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`);
+  if (!/^\d+$/.test(value)) {
+    errors.push("Debe contener solo digitos");
   }
-  if (!/[A-Z]/.test(value)) errors.push("Debe contener una mayuscula");
-  if (!/[a-z]/.test(value)) errors.push("Debe contener una minuscula");
-  if (!/\d/.test(value)) errors.push("Debe contener un numero");
-  if (!/[!@#$%^&*()_+\-=[\]{};':\\\"|,.<>/?]/.test(value)) errors.push("Debe contener un caracter especial");
+  if (value.length !== PASSWORD_REQUIRED_LENGTH) {
+    errors.push(`Debe tener exactamente ${PASSWORD_REQUIRED_LENGTH} digitos`);
+  }
   return {
     valid: errors.length === 0,
     errors,
