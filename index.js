@@ -58,14 +58,22 @@ app.use("/testigos", testigosRoutes);
 app.use("/communications", communicationsRoutes);
 app.use("/notifications", notificationsRoutes);
 
-db.authenticate()
-  .then(() => console.log("[db] Conexion a MySQL establecida"))
-  .catch((err) => console.error("[db] Error de conexion:", err));
-
 app.get("/", (req, res) => {
   res.send("Servidor Express funcionando");
 });
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`Servidor escuchando en http://0.0.0.0:${port}`);
-});
+async function bootstrap() {
+  try {
+    await db.authenticate();
+    console.log("[db] Conexion a MongoDB verificada");
+  } catch (error) {
+    console.error("[db] Error de conexion:", error);
+    process.exit(1);
+  }
+
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`Servidor escuchando en http://0.0.0.0:${port}`);
+  });
+}
+
+bootstrap();

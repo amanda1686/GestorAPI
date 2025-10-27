@@ -1,5 +1,3 @@
-import { Op } from "sequelize";
-import db from "../database/db.js";
 import EjercienteModel from "../Models/ejercientes.js";
 import { Communication, CommunicationRecipient } from "../Models/communication.js";
 import { Notification } from "../Models/notification.js";
@@ -35,19 +33,13 @@ function truncate(value, maxLength) {
   const safeEnd = Math.max(0, maxLength - 3);
   return `${text.slice(0, safeEnd)}...`;
 }
-async function resolveRecipients({
-  mode,
-  recipientNumApis,
-  targetNivel,
-  includeAdmins,
-}) {
+
+async function resolveRecipients({ mode, recipientNumApis, targetNivel, includeAdmins }) {
   const normalizedMode = String(mode ?? "").toLowerCase();
-  const baseWhere = {
-    Num_api: { [Op.not]: null },
-  };
+  const baseQuery = { Num_api: { $ne: null } };
 
   if (!includeAdmins) {
-    baseWhere.Nivel = { [Op.ne]: 1 };
+    baseQuery.Nivel = { $ne: 1 };
   }
 
   if (normalizedMode === "nivel") {
@@ -57,7 +49,7 @@ async function resolveRecipients({
       error.statusCode = 400;
       throw error;
     }
-    baseWhere.Nivel = nivel;
+    baseQuery.Nivel = nivel;
   } else if (normalizedMode === "list" || normalizedMode === "seleccionados") {
     const provided = Array.isArray(recipientNumApis) ? recipientNumApis : [];
     const sanitized = Array.from(
@@ -67,12 +59,16 @@ async function resolveRecipients({
           .filter(Boolean)
       )
     );
-    if (sanitized.length === 0) {
+    const numericValues = sanitized
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+
+    if (numericValues.length === 0) {
       const error = new Error("Debe enviar al menos un destinatario valido");
       error.statusCode = 400;
       throw error;
     }
-    baseWhere.Num_api = sanitized;
+    baseQuery.Num_api = { $in: numericValues };
   } else if (normalizedMode === "all" || normalizedMode === "todos") {
     // sin filtros adicionales
   } else {
@@ -82,11 +78,9 @@ async function resolveRecipients({
     throw error;
   }
 
-  const rows = await EjercienteModel.findAll({
-    attributes: BASE_RECIPIENT_ATTRIBUTES,
-    where: baseWhere,
-    raw: true,
-  });
+  const rows = await EjercienteModel.find(baseQuery)
+    .select(BASE_RECIPIENT_ATTRIBUTES.join(" "))
+    .lean();
 
   const recipients = [];
   const seen = new Set();
@@ -126,20 +120,19 @@ function computeRecipientStats(recipients = []) {
   return {
     total,
     read,
-    unread: total - read,
     archived,
     deleted,
   };
 }
 
-function mapCommunicationForAdmin(plainCommunication, recipientMetaMap) {
-  const recipients = (plainCommunication.recipients ?? []).map((recipient) => {
+function mapCommunicationForAdmin(communication, recipientMetaMap) {
+  const recipients = (communication.recipients ?? []).map((recipient) => {
     const meta = recipientMetaMap.get(recipient.recipient_num_api) ?? {};
     return {
       num_api: recipient.recipient_num_api,
-      read_at: recipient.read_at,
-      archived: recipient.archived,
-      deleted: recipient.deleted,
+      read_at: recipient.read_at ?? null,
+      archived: Boolean(recipient.archived),
+      deleted: Boolean(recipient.deleted),
       nombre: meta.Nombre ?? null,
       apellidos: meta.Apellidos ?? null,
       nivel: meta.Nivel ?? null,
@@ -149,23 +142,23 @@ function mapCommunicationForAdmin(plainCommunication, recipientMetaMap) {
   });
 
   return {
-    id: plainCommunication.id,
-    subject: plainCommunication.subject,
-    body: plainCommunication.body,
-    sender_num_api: plainCommunication.sender_num_api,
-    created_at: plainCommunication.created_at,
+    id: communication.id,
+    subject: communication.subject,
+    body: communication.body,
+    sender_num_api: communication.sender_num_api,
+    created_at: communication.created_at,
     recipients,
-    stats: computeRecipientStats(plainCommunication.recipients ?? []),
+    stats: computeRecipientStats(communication.recipients ?? []),
   };
 }
 
-function mapCommunicationForRecipient(plainCommunication, recipientRecord) {
+function mapCommunicationForRecipient(communication, recipientRecord) {
   return {
-    id: plainCommunication.id,
-    subject: plainCommunication.subject,
-    body: plainCommunication.body,
-    sender_num_api: plainCommunication.sender_num_api,
-    created_at: plainCommunication.created_at,
+    id: communication.id,
+    subject: communication.subject,
+    body: communication.body,
+    sender_num_api: communication.sender_num_api,
+    created_at: communication.created_at,
     read_at: recipientRecord?.read_at ?? null,
     archived: Boolean(recipientRecord?.archived),
     deleted: Boolean(recipientRecord?.deleted),
@@ -202,23 +195,23 @@ export async function sendCommunication(req, res) {
     }
 
     const senderNumApi = getSenderNumApi(req.user);
-    const transaction = await db.transaction();
+    let communication;
 
     try {
-      const communication = await Communication.create(
-        {
-          sender_num_api: senderNumApi,
-          subject,
-          body,
-        },
-        { transaction }
-      );
+      communication = await Communication.create({
+        sender_num_api: senderNumApi,
+        subject,
+        body,
+      });
 
-      const recipientRows = recipients.map((recipient) => ({
+      const recipientDocs = recipients.map((recipient) => ({
         communication_id: communication.id,
         recipient_num_api: recipient.Num_api,
       }));
-      await CommunicationRecipient.bulkCreate(recipientRows, { transaction });
+
+      if (recipientDocs.length > 0) {
+        await CommunicationRecipient.create(recipientDocs);
+      }
 
       const truncatedMessage = truncate(body, MAX_NOTIFICATION_MESSAGE);
       const notificationPayload = recipients.map((recipient) => ({
@@ -229,28 +222,29 @@ export async function sendCommunication(req, res) {
         link,
       }));
       if (notificationPayload.length > 0) {
-        await Notification.bulkCreate(notificationPayload, { transaction });
+        await Notification.create(notificationPayload);
       }
-
-      await transaction.commit();
-
-      const plain = communication.get({ plain: true });
-      return res.status(201).json({
-        message: "Comunicacion enviada",
-        data: {
-          id: plain.id,
-          subject: plain.subject,
-          body: plain.body,
-          created_at: plain.created_at,
-          sender_num_api: plain.sender_num_api,
-          recipient_count: recipients.length,
-          recipients_preview: recipients.slice(0, 5).map(formatRecipientPreview),
-        },
-      });
-    } catch (err) {
-      await transaction.rollback();
-      throw err;
+    } catch (error) {
+      if (communication?.id) {
+        await CommunicationRecipient.deleteMany({ communication_id: communication.id }).catch(() => {});
+        await Communication.deleteOne({ id: communication.id }).catch(() => {});
+      }
+      throw error;
     }
+
+    const recipientsPreview = recipients.slice(0, 5).map(formatRecipientPreview);
+    return res.status(201).json({
+      message: "Comunicacion enviada",
+      data: {
+        id: communication.id,
+        subject: communication.subject,
+        body: communication.body,
+        created_at: communication.created_at,
+        sender_num_api: communication.sender_num_api,
+        recipient_count: recipients.length,
+        recipients_preview: recipientsPreview,
+      },
+    });
   } catch (error) {
     console.error("[communications] Error al enviar:", error);
     if (error?.statusCode) {
@@ -266,7 +260,7 @@ export async function sendCommunication(req, res) {
 export async function listSentCommunications(req, res) {
   try {
     const scope = String(req.query?.scope ?? "mine").toLowerCase();
-    const includeBody = ["1", "true"].includes(String(req.query?.includeBody ?? "" ).toLowerCase());
+    const includeBody = ["1", "true"].includes(String(req.query?.includeBody ?? "").toLowerCase());
     const limit = Math.min(Number(req.query?.limit ?? 20) || 20, 100);
     const offset = Number(req.query?.offset ?? 0) || 0;
 
@@ -275,31 +269,38 @@ export async function listSentCommunications(req, res) {
       where.sender_num_api = getSenderNumApi(req.user);
     }
 
-    const { rows, count } = await Communication.findAndCountAll({
-      where,
-      limit,
-      offset,
-      order: [["created_at", "DESC"]],
-      include: [
-        {
-          model: CommunicationRecipient,
-          as: "recipients",
-          attributes: ["recipient_num_api", "read_at", "archived", "deleted"],
-        },
-      ],
-    });
+    const [rows, count] = await Promise.all([
+      Communication.find(where)
+        .sort({ created_at: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+      Communication.countDocuments(where),
+    ]);
+
+    const communicationIds = rows.map((row) => row.id);
+    const recipientDocs = communicationIds.length
+      ? await CommunicationRecipient.find({ communication_id: { $in: communicationIds } }).lean()
+      : [];
+
+    const recipientsByCommunication = new Map();
+    for (const recipient of recipientDocs) {
+      const list = recipientsByCommunication.get(recipient.communication_id) ?? [];
+      list.push(recipient);
+      recipientsByCommunication.set(recipient.communication_id, list);
+    }
 
     const items = rows.map((row) => {
-      const plain = row.get({ plain: true });
+      const recipients = recipientsByCommunication.get(row.id) ?? [];
       const item = {
-        id: plain.id,
-        subject: plain.subject,
-        created_at: plain.created_at,
-        sender_num_api: plain.sender_num_api,
-        stats: computeRecipientStats(plain.recipients ?? []),
+        id: row.id,
+        subject: row.subject,
+        created_at: row.created_at,
+        sender_num_api: row.sender_num_api,
+        stats: computeRecipientStats(recipients),
       };
       if (includeBody) {
-        item.body = plain.body;
+        item.body = row.body;
       }
       return item;
     });
@@ -323,43 +324,39 @@ export async function getCommunicationDetail(req, res) {
       return res.status(400).json({ error: "ID invalido" });
     }
 
-    const communication = await Communication.findByPk(id, {
-      include: [
-        {
-          model: CommunicationRecipient,
-          as: "recipients",
-          attributes: ["recipient_num_api", "read_at", "archived", "deleted"],
-        },
-      ],
-    });
-
+    const communication = await Communication.findByPk(id, { lean: true });
     if (!communication) {
       return res.status(404).json({ error: "Comunicacion no encontrada" });
     }
 
-    const plain = communication.get({ plain: true });
+    const recipients = await CommunicationRecipient.find({ communication_id: id }).lean();
+    communication.recipients = recipients;
+
     const userNumApi = normalizeNumApi(req.user?.Num_api);
     const isAdmin = Number(req.user?.Nivel) === 1;
-    const recipientRecord = (plain.recipients ?? []).find(
-      (recipient) => recipient.recipient_num_api === userNumApi
-    );
+    const recipientRecord = recipients.find((recipient) => recipient.recipient_num_api === userNumApi);
 
     if (!isAdmin && !recipientRecord) {
       return res.status(403).json({ error: "No tienes permisos para ver esta comunicacion" });
     }
 
     if (isAdmin) {
-      const recipientIds = (plain.recipients ?? []).map((recipient) => recipient.recipient_num_api);
-      const metaRows = await EjercienteModel.findAll({
-        attributes: BASE_RECIPIENT_ATTRIBUTES,
-        where: { Num_api: recipientIds },
-        raw: true,
-      });
+      const recipientIds = recipients
+        .map((recipient) => recipient.recipient_num_api)
+        .filter(Boolean);
+      const numericIds = recipientIds
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      const metaRows = numericIds.length
+        ? await EjercienteModel.find({ Num_api: { $in: numericIds } })
+            .select(BASE_RECIPIENT_ATTRIBUTES.join(" "))
+            .lean()
+        : [];
       const metaMap = new Map(metaRows.map((row) => [normalizeNumApi(row.Num_api), row]));
-      return res.json(mapCommunicationForAdmin(plain, metaMap));
+      return res.json(mapCommunicationForAdmin(communication, metaMap));
     }
 
-    return res.json(mapCommunicationForRecipient(plain, recipientRecord));
+    return res.json(mapCommunicationForRecipient(communication, recipientRecord));
   } catch (error) {
     console.error("[communications] Error obteniendo detalle:", error);
     return res.status(500).json({ error: "Error interno" });
@@ -374,7 +371,7 @@ export async function listInbox(req, res) {
     }
 
     const status = String(req.query?.status ?? "active").toLowerCase();
-    const includeBody = ["1", "true"].includes(String(req.query?.includeBody ?? "" ).toLowerCase());
+    const includeBody = ["1", "true"].includes(String(req.query?.includeBody ?? "").toLowerCase());
     const limit = Math.min(Number(req.query?.limit ?? 20) || 20, 100);
     const offset = Number(req.query?.offset ?? 0) || 0;
 
@@ -395,38 +392,43 @@ export async function listInbox(req, res) {
       where.deleted = false;
     }
 
-    const { rows, count } = await CommunicationRecipient.findAndCountAll({
-      where,
-      limit,
-      offset,
-      order: [[{ model: Communication, as: "communication" }, "created_at", "DESC"]],
-      include: [
-        {
-          model: Communication,
-          as: "communication",
-          attributes: ["id", "subject", "body", "sender_num_api", "created_at"],
-        },
-      ],
-    });
+    const [rows, count] = await Promise.all([
+      CommunicationRecipient.find(where)
+        .sort({ created_at: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+      CommunicationRecipient.countDocuments(where),
+    ]);
 
-    const items = rows.map((row) => {
-      const recipient = row.get({ plain: true });
-      const communication = recipient.communication;
-      const item = {
-        id: communication.id,
-        subject: communication.subject,
-        body_preview: truncate(communication.body, 200),
-        sender_num_api: communication.sender_num_api,
-        created_at: communication.created_at,
-        read_at: recipient.read_at,
-        archived: recipient.archived,
-        deleted: recipient.deleted,
-      };
-      if (includeBody) {
-        item.body = communication.body;
-      }
-      return item;
-    });
+    const communicationIds = rows.map((row) => row.communication_id);
+    const communications = communicationIds.length
+      ? await Communication.find({ id: { $in: communicationIds } })
+          .select({ id: 1, subject: 1, body: 1, sender_num_api: 1, created_at: 1 })
+          .lean()
+      : [];
+    const communicationMap = new Map(communications.map((item) => [item.id, item]));
+
+    const items = rows
+      .map((recipient) => {
+        const communication = communicationMap.get(recipient.communication_id);
+        if (!communication) return null;
+        const item = {
+          id: communication.id,
+          subject: communication.subject,
+          body_preview: truncate(communication.body, 200),
+          sender_num_api: communication.sender_num_api,
+          created_at: communication.created_at,
+          read_at: recipient.read_at,
+          archived: recipient.archived,
+          deleted: recipient.deleted,
+        };
+        if (includeBody) {
+          item.body = communication.body;
+        }
+        return item;
+      })
+      .filter(Boolean);
 
     return res.json({
       total: count,
@@ -453,10 +455,8 @@ export async function markCommunicationRead(req, res) {
     }
 
     const record = await CommunicationRecipient.findOne({
-      where: {
-        communication_id: id,
-        recipient_num_api: userNumApi,
-      },
+      communication_id: id,
+      recipient_num_api: userNumApi,
     });
 
     if (!record) {
@@ -465,6 +465,7 @@ export async function markCommunicationRead(req, res) {
 
     if (!record.read_at) {
       record.read_at = new Date();
+      record.updated_at = new Date();
       await record.save();
     }
 
@@ -489,17 +490,20 @@ export async function toggleCommunicationArchive(req, res) {
 
     const archived = Boolean(req.body?.archived);
 
-    const [updated] = await CommunicationRecipient.update(
-      { archived },
+    const result = await CommunicationRecipient.updateOne(
       {
-        where: {
-          communication_id: id,
-          recipient_num_api: userNumApi,
+        communication_id: id,
+        recipient_num_api: userNumApi,
+      },
+      {
+        $set: {
+          archived,
+          updated_at: new Date(),
         },
       }
     );
 
-    if (updated === 0) {
+    if (result.matchedCount === 0) {
       return res.status(404).json({ error: "Registro no encontrado" });
     }
 
@@ -522,17 +526,20 @@ export async function deleteCommunication(req, res) {
       return res.status(400).json({ error: "El usuario no tiene Num_api asociado" });
     }
 
-    const [updated] = await CommunicationRecipient.update(
-      { deleted: true },
+    const result = await CommunicationRecipient.updateOne(
       {
-        where: {
-          communication_id: id,
-          recipient_num_api: userNumApi,
+        communication_id: id,
+        recipient_num_api: userNumApi,
+      },
+      {
+        $set: {
+          deleted: true,
+          updated_at: new Date(),
         },
       }
     );
 
-    if (updated === 0) {
+    if (result.matchedCount === 0) {
       return res.status(404).json({ error: "Registro no encontrado" });
     }
 

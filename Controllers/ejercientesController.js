@@ -1,122 +1,8 @@
 import EjercienteModel from "../Models/ejercientes.js";
 import { hashPassword, validatePasswordStrength, verifyPassword } from "../Utils/auth.js";
+
 const NIVEL_DEFAULT = 3;
 const NIVELES_VALIDOS = new Set([1, 2, 3]);
-
-function sanitizeEjercienteResponse(ejerciente) {
-  if (!ejerciente) return ejerciente;
-  const data = ejerciente.toJSON ? ejerciente.toJSON() : { ...ejerciente };
-  delete data.contrasena;
-  if (data.Nivel !== undefined && data.Nivel !== null) {
-    const parsedNivel = Number(data.Nivel);
-    if (!Number.isNaN(parsedNivel)) {
-      data.Nivel = parsedNivel;
-    }
-  }
-  return data;
-}
-
-function getRequesterNivel(req) {
-  const candidates = [
-    req.user?.Nivel,
-    req.user?.nivel,
-    req.auth?.Nivel,
-    req.auth?.nivel,
-    req.headers?.['x-user-nivel'],
-    req.headers?.['x-nivel'],
-    req.headers?.['x-admin-nivel'],
-  ];
-
-  for (const candidate of candidates) {
-    const parsed = Number(candidate);
-    if (Number.isInteger(parsed)) return parsed;
-  }
-
-  return null;
-}
-
-function parseNivel(value) {
-  const parsed = Number(value);
-  if (Number.isInteger(parsed) && NIVELES_VALIDOS.has(parsed)) {
-    return parsed;
-  }
-  return null;
-}
-
-function normalizeNivelFromPayload(req, payload, { mode }) {
-  const hasNivel = Object.prototype.hasOwnProperty.call(payload ?? {}, 'Nivel');
-  const requesterNivel = getRequesterNivel(req);
-
-  if (!hasNivel) {
-    if (mode === 'create') {
-      payload.Nivel = NIVEL_DEFAULT;
-    }
-    return;
-  }
-
-  if (requesterNivel === 1) {
-    const requestedNivel = parseNivel(payload.Nivel);
-    if (requestedNivel === null) {
-      const error = new Error('Nivel invalido');
-      error.statusCode = 400;
-      error.details = {
-        allowed: Array.from(NIVELES_VALIDOS),
-      };
-      throw error;
-    }
-    payload.Nivel = requestedNivel;
-    return;
-  }
-
-  if (mode === 'create') {
-    payload.Nivel = NIVEL_DEFAULT;
-    return;
-  }
-
-  const error = new Error('No tienes permisos para modificar el nivel');
-  error.statusCode = 403;
-  error.details = { requiredNivel: 1 };
-  throw error;
-}
-
-function handleSequelizeError(res, err) {
-  if (err?.name === "SequelizeValidationError" || err?.name === "SequelizeUniqueConstraintError") {
-    const details = (err.errors ?? []).map(({ message, path, value, validatorKey, validatorName, type }) => ({
-      message,
-      path,
-      value,
-      validatorKey,
-      validatorName,
-      type,
-    }));
-    const messages = details.length > 0 ? details.map((item) => item.message) : [err.message].filter(Boolean);
-    return res.status(400).json({
-      error: "Validation error",
-      messages,
-      details,
-    });
-  }
-
-  console.error("[ejercientes] Error inesperado:", err);
-  const sqlMessage = err?.parent?.sqlMessage ?? err?.original?.sqlMessage;
-  const details = err?.errors
-    ? err.errors.map(({ message, path, value, validatorKey, validatorName, type }) => ({
-        message,
-        path,
-        value,
-        validatorKey,
-        validatorName,
-        type,
-      }))
-    : undefined;
-
-  return res.status(500).json({
-    error: err.message,
-    ...(sqlMessage ? { sqlMessage } : {}),
-    ...(details ? { details } : {}),
-  });
-}
-
 const ESTADOS_VALIDOS = ["activo", "pendiente", "inactivo"];
 
 const CAMPOS_PERMITIDOS = new Set([
@@ -149,6 +35,112 @@ const CAMPOS_PERMITIDOS = new Set([
   "estado",
 ]);
 
+function sanitizeEjercienteResponse(ejerciente) {
+  if (!ejerciente) return ejerciente;
+  const data = ejerciente.toJSON ? ejerciente.toJSON() : { ...ejerciente };
+  delete data.contrasena;
+  if (data.Nivel !== undefined && data.Nivel !== null) {
+    const parsedNivel = Number(data.Nivel);
+    if (!Number.isNaN(parsedNivel)) {
+      data.Nivel = parsedNivel;
+    }
+  }
+  return data;
+}
+
+function getRequesterNivel(req) {
+  const candidates = [
+    req.user?.Nivel,
+    req.user?.nivel,
+    req.auth?.Nivel,
+    req.auth?.nivel,
+    req.headers?.["x-user-nivel"],
+    req.headers?.["x-nivel"],
+    req.headers?.["x-admin-nivel"],
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isInteger(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+function parseNivel(value) {
+  const parsed = Number(value);
+  if (Number.isInteger(parsed) && NIVELES_VALIDOS.has(parsed)) {
+    return parsed;
+  }
+  return null;
+}
+
+function normalizeNivelFromPayload(req, payload, { mode }) {
+  const hasNivel = Object.prototype.hasOwnProperty.call(payload ?? {}, "Nivel");
+  const requesterNivel = getRequesterNivel(req);
+
+  if (!hasNivel) {
+    if (mode === "create") {
+      payload.Nivel = NIVEL_DEFAULT;
+    }
+    return;
+  }
+
+  if (requesterNivel === 1) {
+    const requestedNivel = parseNivel(payload.Nivel);
+    if (requestedNivel === null) {
+      const error = new Error("Nivel invalido");
+      error.statusCode = 400;
+      error.details = {
+        allowed: Array.from(NIVELES_VALIDOS),
+      };
+      throw error;
+    }
+    payload.Nivel = requestedNivel;
+    return;
+  }
+
+  if (mode === "create") {
+    payload.Nivel = NIVEL_DEFAULT;
+    return;
+  }
+
+  const error = new Error("No tienes permisos para modificar el nivel");
+  error.statusCode = 403;
+  error.details = { requiredNivel: 1 };
+  throw error;
+}
+
+function handleMongoError(res, err) {
+  if (err?.name === "ValidationError") {
+    const details = Object.values(err.errors ?? {}).map((item) => ({
+      message: item.message,
+      path: item.path,
+      value: item.value,
+      kind: item.kind,
+    }));
+    return res.status(400).json({
+      error: "Validation error",
+      messages: details.map((item) => item.message),
+      details,
+    });
+  }
+
+  if (err?.code === 11000) {
+    const fields = Object.keys(err.keyPattern ?? err.keyValue ?? {});
+    return res.status(409).json({
+      error: "Registro duplicado",
+      fields,
+    });
+  }
+
+  console.error("[ejercientes] Error inesperado:", err);
+  return res.status(500).json({
+    error: "Error interno",
+    message: err?.message,
+  });
+}
+
 function limpiarPayload(body) {
   const payload = {};
   for (const [clave, valor] of Object.entries(body ?? {})) {
@@ -166,7 +158,12 @@ export const cambiarContrasena = async (req, res) => {
       return res.status(400).json({ error: "La contrasena es obligatoria" });
     }
 
-    const ejerciente = await EjercienteModel.findByPk(req.params.id);
+    const id = Number(req.params?.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID invalido" });
+    }
+
+    const ejerciente = await EjercienteModel.findByPk(id);
     if (!ejerciente) {
       return res.status(404).json({ error: "No encontrado" });
     }
@@ -188,11 +185,12 @@ export const cambiarContrasena = async (req, res) => {
     }
 
     ejerciente.contrasena = hashPassword(contrasena);
+    ejerciente.updatedAt = new Date();
     await ejerciente.save();
 
     res.json({ message: "Contrasena actualizada" });
   } catch (err) {
-    return handleSequelizeError(res, err);
+    return handleMongoError(res, err);
   }
 };
 
@@ -200,7 +198,7 @@ export const crearEjerciente = async (req, res) => {
   try {
     const payload = limpiarPayload(req.body);
     try {
-      normalizeNivelFromPayload(req, payload, { mode: 'create' });
+      normalizeNivelFromPayload(req, payload, { mode: "create" });
     } catch (customError) {
       if (customError?.statusCode) {
         return res.status(customError.statusCode).json({
@@ -210,6 +208,7 @@ export const crearEjerciente = async (req, res) => {
       }
       throw customError;
     }
+
     if (payload.estado) {
       payload.estado = String(payload.estado).trim().toLowerCase();
       if (!ESTADOS_VALIDOS.includes(payload.estado)) {
@@ -219,6 +218,7 @@ export const crearEjerciente = async (req, res) => {
         });
       }
     }
+
     if (!payload.contrasena) {
       return res.status(400).json({ error: "La contrasena es obligatoria" });
     }
@@ -234,16 +234,16 @@ export const crearEjerciente = async (req, res) => {
 
     res.status(201).json({ data: sanitizeEjercienteResponse(nuevo) });
   } catch (err) {
-    return handleSequelizeError(res, err);
+    return handleMongoError(res, err);
   }
 };
 
 export const listarEjercientes = async (_req, res) => {
   try {
-    const ejercientes = await EjercienteModel.findAll();
+    const ejercientes = await EjercienteModel.find().lean();
     res.json(ejercientes.map(sanitizeEjercienteResponse));
   } catch (err) {
-    return handleSequelizeError(res, err);
+    return handleMongoError(res, err);
   }
 };
 
@@ -253,7 +253,7 @@ export const obtenerEjerciente = async (req, res) => {
     if (!ejerciente) return res.status(404).json({ error: "No encontrado" });
     res.json(sanitizeEjercienteResponse(ejerciente));
   } catch (err) {
-    return handleSequelizeError(res, err);
+    return handleMongoError(res, err);
   }
 };
 
@@ -269,15 +269,14 @@ export const actualizarEjerciente = async (req, res) => {
       return res.status(404).json({ error: "No encontrado" });
     }
 
-    const isSelfUpdate = req.auth.IdEjerciente === id;
-    const isAdmin = req.user.Nivel === 1;
+    const authId = Number(req.auth?.IdEjerciente ?? req.auth?.id);
+    const isSelfUpdate = Number.isInteger(authId) && authId === id;
+    const isAdmin = req.user?.Nivel === 1;
 
-    // Determinar qué campos puede actualizar según su rol
     let allowedFields;
     if (isAdmin) {
-      allowedFields = [...CAMPOS_PERMITIDOS]; // Todos los campos permitidos
+      allowedFields = [...CAMPOS_PERMITIDOS];
     } else if (isSelfUpdate) {
-      // Los usuarios normales solo pueden actualizar sus datos personales básicos
       allowedFields = [
         "Nombre",
         "Apellidos",
@@ -290,11 +289,11 @@ export const actualizarEjerciente = async (req, res) => {
         "Direccion",
         "cp",
         "Localidad",
-        "Provincia"
+        "Provincia",
       ];
     } else {
       return res.status(403).json({
-        error: "No tienes permisos para actualizar este ejerciente"
+        error: "No tienes permisos para actualizar este ejerciente",
       });
     }
 
@@ -311,7 +310,7 @@ export const actualizarEjerciente = async (req, res) => {
 
     if (isAdmin && Object.prototype.hasOwnProperty.call(payload, "Nivel")) {
       try {
-        normalizeNivelFromPayload(req, payload, { mode: 'update' });
+        normalizeNivelFromPayload(req, payload, { mode: "update" });
       } catch (customError) {
         if (customError?.statusCode) {
           return res.status(customError.statusCode).json({
@@ -331,32 +330,35 @@ export const actualizarEjerciente = async (req, res) => {
       payload.contrasena = hashPassword(payload.contrasena);
     }
 
-    await ejerciente.update(payload);
-    res.json({ 
-      message: "Actualizado", 
-      data: sanitizeEjercienteResponse(ejerciente) 
+    Object.assign(ejerciente, payload, { updatedAt: new Date() });
+    await ejerciente.save();
+
+    res.json({
+      message: "Actualizado",
+      data: sanitizeEjercienteResponse(ejerciente),
     });
   } catch (err) {
-    return handleSequelizeError(res, err);
+    return handleMongoError(res, err);
   }
 };
 
 export const eliminarEjerciente = async (req, res) => {
   try {
-    const deleted = await EjercienteModel.destroy({
-      where: { IdEjerciente: req.params.id },
-    });
-    if (!deleted) return res.status(404).json({ error: "No encontrado" });
+    const deleted = await EjercienteModel.destroyByPk(req.params.id);
+    if (!deleted?.deletedCount) return res.status(404).json({ error: "No encontrado" });
     res.json({ message: "Eliminado" });
   } catch (err) {
-    return handleSequelizeError(res, err);
+    return handleMongoError(res, err);
   }
 };
 
-// Cambiar estado
 export const actualizarEstado = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params?.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID invalido" });
+    }
+
     const { estado } = req.body;
 
     const normalizedEstado = String(estado ?? "").trim().toLowerCase();
@@ -370,11 +372,11 @@ export const actualizarEstado = async (req, res) => {
     }
 
     ejerciente.estado = normalizedEstado;
+    ejerciente.updatedAt = new Date();
     await ejerciente.save();
 
     res.json({ message: "Estado actualizado", data: sanitizeEjercienteResponse(ejerciente) });
   } catch (err) {
-    return handleSequelizeError(res, err);
+    return handleMongoError(res, err);
   }
 };
-

@@ -1,39 +1,48 @@
-import 'dotenv/config';
-import mysql from 'mysql2/promise';
-import { randomBytes, pbkdf2Sync } from 'crypto';
+import "dotenv/config";
+import { randomBytes, pbkdf2Sync } from "crypto";
+import db from "../database/db.js";
+import EjercienteModel from "../Models/ejercientes.js";
 
 const ITER = 100000;
 const KEY_LEN = 32;
+const DIGEST = "sha512";
+const SALT_SIZE = 16;
+
 const hashPassword = (plain) => {
-  const salt = randomBytes(16).toString('hex');
-  const hash = pbkdf2Sync(plain, salt, ITER, KEY_LEN, 'sha512').toString('hex');
+  const base = String(plain ?? "").trim();
+  if (!base) throw new Error("Valor de contrasena invalido");
+  const salt = randomBytes(SALT_SIZE).toString("hex");
+  const hash = pbkdf2Sync(base, salt, ITER, KEY_LEN, DIGEST).toString("hex");
   return `${salt}:${hash}`;
 };
 
 const main = async () => {
-  const conn = await mysql.createConnection({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+  await db.connectDB();
+
+  const candidates = await EjercienteModel.find({
+    Num_api: { $ne: null },
+    $or: [{ contrasena: null }, { contrasena: "" }, { contrasena: { $exists: false } }],
   });
 
-  const [rows] = await conn.execute(
-    'SELECT IdEjerciente, Num_api FROM ejercientes WHERE contrasena IS NULL AND Num_api IS NOT NULL'
-  );
-
-  for (const { IdEjerciente, Num_api } of rows) {
-    const plain = String(Num_api);
-    const hashed = hashPassword(plain);
-    await conn.execute(
-      'UPDATE ejercientes SET contrasena = ? WHERE IdEjerciente = ?',
-      [hashed, IdEjerciente]
-    );
+  if (candidates.length === 0) {
+    console.log("No hay contrasenas pendientes de actualizar.");
+    await db.closeDB();
+    return;
   }
 
-  await conn.end();
-  console.log('Contraseñas actualizadas.');
+  for (const ejerciente of candidates) {
+    const plain = String(ejerciente.Num_api ?? "").trim();
+    if (!plain) {
+      console.warn(`Se omite IdEjerciente ${ejerciente.IdEjerciente}: Num_api vacio.`);
+      continue;
+    }
+    ejerciente.contrasena = hashPassword(plain);
+    ejerciente.updatedAt = new Date();
+    await ejerciente.save();
+  }
+
+  await db.closeDB();
+  console.log("Contrasenas actualizadas.");
 };
 
 main().catch((err) => {

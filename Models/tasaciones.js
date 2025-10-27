@@ -1,33 +1,62 @@
-﻿import db from "../database/db.js";
-import { DataTypes } from "sequelize";
-import EjercienteModel from "./ejercientes.js";
+import db from "../database/db.js";
+import { getNextSequenceValue } from "../database/sequences.js";
 
-const TasacionesModel = db.define(
-  "tasaciones",
+const { mongoose } = db;
+const { Schema, model } = mongoose;
+
+const TasacionSchema = new Schema(
   {
-    id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-    Num_api: { type: DataTypes.STRING(50), allowNull: true },
-    Tipo: { type: DataTypes.STRING(50), allowNull: true },
-    cp: { type: DataTypes.STRING(10), allowNull: true },
-    fecha: { type: DataTypes.DATEONLY, allowNull: true },
-    Sup_m2: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
-    Valor_total: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
-    Eur_m2: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
+    id: { type: Number, unique: true, index: true },
+    Num_api: { type: Number, index: true },
+    Tipo: { type: String, trim: true },
+    cp: { type: String, trim: true },
+    fecha: { type: Date },
+    Sup_m2: { type: Number },
+    Valor_total: { type: Number },
+    Eur_m2: { type: Number },
+    created_at: { type: Date, default: Date.now },
+    updated_at: { type: Date, default: Date.now },
   },
-  { timestamps: false }
+  {
+    collection: "tasaciones",
+    timestamps: false,
+  }
 );
 
-TasacionesModel.belongsTo(EjercienteModel, {
-  foreignKey: "Num_api",
-  targetKey: "Num_api",
-  as: "ejerciente",
+TasacionSchema.pre("save", async function assignSequentialId(next) {
+  if (this.id) {
+    this.updated_at = new Date();
+    return next();
+  }
+  try {
+    const nextId = await getNextSequenceValue("tasaciones");
+    this.id = nextId;
+    this.updated_at = new Date();
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 });
 
-EjercienteModel.hasMany(TasacionesModel, {
-  foreignKey: "Num_api",
-  sourceKey: "Num_api",
-  as: "tasaciones",
-});
+TasacionSchema.statics.findAll = function findAll(options = {}) {
+  const { where = {}, raw = false, sort = { created_at: -1 } } = options ?? {};
+  let query = this.find(where);
+  if (sort) {
+    query = query.sort(sort);
+  }
+  if (raw) {
+    query = query.lean();
+  }
+  return query.exec();
+};
+
+TasacionSchema.methods.toJSON = function toJSON() {
+  const obj = this.toObject({ versionKey: false });
+  obj._id = obj._id?.toString();
+  return obj;
+};
+
+const TasacionesModel = model("Tasacion", TasacionSchema);
 
 export default TasacionesModel;
 

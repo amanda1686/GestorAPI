@@ -1,34 +1,64 @@
-﻿import db from "../database/db.js";
-import { DataTypes } from "sequelize";
-import EjercienteModel from "./ejercientes.js";
+import db from "../database/db.js";
+import { getNextSequenceValue } from "../database/sequences.js";
 
-const TestigosModel = db.define(
-  "testigos",
+const { mongoose } = db;
+const { Schema, model } = mongoose;
+
+const TestigoSchema = new Schema(
   {
-    id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-    Num_api: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-    Fecha: { type: DataTypes.DATEONLY, allowNull: true },
-    Tipo: { type: DataTypes.STRING(50), allowNull: true },
-    CP: { type: DataTypes.STRING(10), allowNull: true },
-    Dir: { type: DataTypes.STRING(255), allowNull: true },
-    zona: { type: DataTypes.STRING(100), allowNull: true },
-    Eur_m2: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
-    Operacion: { type: DataTypes.STRING(30), allowNull: true },
+    id: { type: Number, unique: true, index: true },
+    Num_api: { type: Number, required: true, index: true },
+    Fecha: { type: Date },
+    Tipo: { type: String, trim: true },
+    CP: { type: String, trim: true },
+    Dir: { type: String, trim: true },
+    zona: { type: String, trim: true },
+    Eur_m2: { type: Number },
+    Operacion: { type: String, trim: true },
+    Sup_m2: { type: Number },
+    created_at: { type: Date, default: Date.now },
+    updated_at: { type: Date, default: Date.now },
   },
-  { timestamps: false }
+  {
+    collection: "testigos",
+    timestamps: false,
+  }
 );
 
-TestigosModel.belongsTo(EjercienteModel, {
-  foreignKey: "Num_api",
-  targetKey: "Num_api",
-  as: "ejerciente",
+TestigoSchema.pre("save", async function assignSequentialId(next) {
+  if (this.id) {
+    this.updated_at = new Date();
+    return next();
+  }
+  try {
+    const nextId = await getNextSequenceValue("testigos");
+    this.id = nextId;
+    this.updated_at = new Date();
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 });
 
-EjercienteModel.hasMany(TestigosModel, {
-  foreignKey: "Num_api",
-  sourceKey: "Num_api",
-  as: "testigos",
-});
+TestigoSchema.statics.findAll = function findAll(options = {}) {
+  const { where = {}, raw = false, sort = { created_at: -1 } } = options ?? {};
+  let query = this.find(where);
+  if (sort) {
+    query = query.sort(sort);
+  }
+  if (raw) {
+    query = query.lean();
+  }
+  return query.exec();
+};
+
+TestigoSchema.methods.toJSON = function toJSON() {
+  const obj = this.toObject({ versionKey: false });
+  obj._id = obj._id?.toString();
+  return obj;
+};
+
+const TestigosModel = model("Testigo", TestigoSchema);
 
 export default TestigosModel;
 

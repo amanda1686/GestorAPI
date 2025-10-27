@@ -1,4 +1,3 @@
-import { Op } from "sequelize";
 import { Notification, NOTIFICATION_KINDS } from "../Models/notification.js";
 
 function normalizeNumApi(value) {
@@ -72,7 +71,7 @@ export async function createNotification(req, res) {
 
     return res.status(201).json({
       message: "Notificacion creada",
-      data: notification.get({ plain: true }),
+      data: notification.toJSON(),
     });
   } catch (error) {
     console.error("[notifications] Error creando:", error);
@@ -98,19 +97,19 @@ export async function listNotifications(req, res) {
     if (status === "unread") {
       where.read_at = null;
     } else if (status === "read") {
-      where.read_at = { [Op.not]: null };
+      where.read_at = { $ne: null };
     }
 
-    const { rows, count } = await Notification.findAndCountAll({
-      where,
-      limit,
-      offset,
-      order: [["created_at", "DESC"]],
-    });
+    const [rows, count] = await Promise.all([
+      Notification.find(where)
+        .sort({ created_at: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+      Notification.countDocuments(where),
+    ]);
 
-    const items = rows.map((row) => row.get({ plain: true }));
-
-    return res.json({ total: count, limit, offset, items });
+    return res.json({ total: count, limit, offset, items: rows });
   } catch (error) {
     console.error("[notifications] Error listando:", error);
     return res.status(500).json({ error: "Error interno" });
@@ -130,10 +129,8 @@ export async function markNotificationRead(req, res) {
     }
 
     const notification = await Notification.findOne({
-      where: {
-        id,
-        user_num_api: userNumApi,
-      },
+      id,
+      user_num_api: userNumApi,
     });
 
     if (!notification) {
@@ -159,17 +156,17 @@ export async function markAllNotificationsRead(req, res) {
       return res.status(400).json({ error: "El usuario no tiene Num_api asociado" });
     }
 
-    const [updated] = await Notification.update(
-      { read_at: new Date() },
+    const result = await Notification.updateMany(
       {
-        where: {
-          user_num_api: userNumApi,
-          read_at: null,
-        },
+        user_num_api: userNumApi,
+        read_at: null,
+      },
+      {
+        $set: { read_at: new Date() },
       }
     );
 
-    return res.json({ message: "Notificaciones actualizadas", updated });
+    return res.json({ message: "Notificaciones actualizadas", updated: result.modifiedCount });
   } catch (error) {
     console.error("[notifications] Error marcando todas como leidas:", error);
     return res.status(500).json({ error: "Error interno" });
@@ -188,14 +185,12 @@ export async function deleteNotification(req, res) {
       return res.status(400).json({ error: "El usuario no tiene Num_api asociado" });
     }
 
-    const deleted = await Notification.destroy({
-      where: {
-        id,
-        user_num_api: userNumApi,
-      },
+    const result = await Notification.deleteOne({
+      id,
+      user_num_api: userNumApi,
     });
 
-    if (!deleted) {
+    if (result.deletedCount === 0) {
       return res.status(404).json({ error: "Notificacion no encontrada" });
     }
 

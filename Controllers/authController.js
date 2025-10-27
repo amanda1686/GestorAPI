@@ -9,7 +9,7 @@ export async function login(req, res) {
       return res.status(400).json({ error: "usuario y contrasena son obligatorios" });
     }
 
-    const ejerciente = await EjercienteModel.findOne({ where: { usuario } });
+    const ejerciente = await EjercienteModel.findOne({ usuario });
     if (!ejerciente) {
       return res.status(401).json({ error: "Credenciales invalidas" });
     }
@@ -68,6 +68,7 @@ export async function updateProfile(req, res) {
       return res.status(400).json({ error: "No se recibieron campos para actualizar" });
     }
 
+    ejerciente.updatedAt = new Date();
     await ejerciente.save();
     return res.json({ user: sanitizeUser(ejerciente) });
   } catch (err) {

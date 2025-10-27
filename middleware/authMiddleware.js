@@ -13,11 +13,14 @@ export async function authenticate(req, res, next) {
     }
 
     const decoded = verifyAccessToken(token);
-    if (!decoded?.IdEjerciente) {
+    const authId = Number(decoded?.IdEjerciente ?? decoded?.id);
+    if (!Number.isInteger(authId)) {
       return res.status(401).json({ error: "Token invalido" });
     }
 
-    const ejerciente = await EjercienteModel.findByPk(decoded.IdEjerciente);
+    decoded.IdEjerciente = authId;
+
+    const ejerciente = await EjercienteModel.findByPk(authId);
     if (!ejerciente) {
       return res.status(401).json({ error: "Usuario no encontrado" });
     }
@@ -40,7 +43,8 @@ export function requireNivel(requiredNivel = 1, options = {}) {
     }
     
     // Permitir actualización de datos propios
-    if (options.allowSelfUpdate && req.params.id && req.auth.IdEjerciente === Number(req.params.id)) {
+    const authId = Number(req.auth?.IdEjerciente ?? req.auth?.id);
+    if (options.allowSelfUpdate && req.params.id && authId === Number(req.params.id)) {
       return next();
     }
     

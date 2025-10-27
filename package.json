@@ -1,16 +1,19 @@
 {
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "create-admin": "node scripts/createAdmin.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
-    "@types/cors": "^2.8.19",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "morgan": "^1.10.1",
-    "mysql2": "^3.15.0",
-    "sequelize": "^6.37.7"
+    "mongodb": "^6.20.0",
+    "mongoose": "^8.19.2",
+    "morgan": "^1.10.1"
   }
 }
