@@ -304,10 +304,6 @@ export const actualizarEjerciente = async (req, res) => {
       }
     }
 
-    if (Object.keys(payload).length === 0) {
-      return res.status(400).json({ error: "No se recibieron campos para actualizar" });
-    }
-
     if (isAdmin && Object.prototype.hasOwnProperty.call(payload, "Nivel")) {
       try {
         normalizeNivelFromPayload(req, payload, { mode: "update" });
@@ -322,12 +318,29 @@ export const actualizarEjerciente = async (req, res) => {
       }
     }
 
-    if (payload.contrasena) {
-      const passwordCheck = validatePasswordStrength(payload.contrasena);
-      if (!passwordCheck.valid) {
-        return res.status(400).json({ error: "Contrasena invalida", details: passwordCheck.errors });
+    if (isAdmin && Object.prototype.hasOwnProperty.call(payload, "contrasena")) {
+      const normalizedPassword = String(payload.contrasena ?? "").trim();
+      if (!normalizedPassword) {
+        delete payload.contrasena;
+      } else if (normalizedPassword.includes(":")) {
+        if (normalizedPassword === ejerciente.contrasena) {
+          delete payload.contrasena;
+        } else {
+          return res.status(400).json({ error: "Contrasena invalida" });
+        }
+      } else if (verifyPassword(normalizedPassword, ejerciente.contrasena)) {
+        delete payload.contrasena;
+      } else {
+        const passwordCheck = validatePasswordStrength(normalizedPassword);
+        if (!passwordCheck.valid) {
+          return res.status(400).json({ error: "Contrasena invalida", details: passwordCheck.errors });
+        }
+        payload.contrasena = hashPassword(normalizedPassword);
       }
-      payload.contrasena = hashPassword(payload.contrasena);
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return res.status(400).json({ error: "No se recibieron campos para actualizar" });
     }
 
     Object.assign(ejerciente, payload, { updatedAt: new Date() });

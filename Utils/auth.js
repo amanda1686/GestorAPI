@@ -33,11 +33,11 @@ export function verifyPassword(plain, stored) {
 export function validatePasswordStrength(password) {
   const value = String(password ?? "").trim();
   const errors = [];
-  if (!/^\d+$/.test(value)) {
-    errors.push("Debe contener solo digitos");
+  if (!/^[A-Za-z0-9]+$/.test(value)) {
+    errors.push("Debe contener solo letras y digitos");
   }
   if (value.length !== PASSWORD_REQUIRED_LENGTH) {
-    errors.push(`Debe tener exactamente ${PASSWORD_REQUIRED_LENGTH} digitos`);
+    errors.push(`Debe tener exactamente ${PASSWORD_REQUIRED_LENGTH} caracteres`);
   }
   return {
     valid: errors.length === 0,
