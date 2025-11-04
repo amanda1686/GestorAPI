@@ -1,4 +1,4 @@
-import TasacionesModel from "../Models/tasaciones.js";
+import TasacionesModel, { validarTasacion } from "../Models/tasaciones.js";
 import EjercienteModel from "../Models/ejercientes.js";
 
 const EJERCIENTE_ATTRIBUTES = [
@@ -71,6 +71,99 @@ export async function listarTasaciones(_req, res) {
     });
 
     res.json(items);
+  } catch (error) {
+    return handleControllerError(res, error);
+  }
+}
+
+export async function crearTasacion(req, res) {
+  try {
+    const payload = { ...(req.body ?? {}) };
+    const numApi = Number(payload.Num_api ?? payload.num_api);
+
+    if (!Number.isInteger(numApi)) {
+      return res.status(400).json({ error: "Num_api es obligatorio y debe ser numerico" });
+    }
+
+    payload.Num_api = numApi;
+    payload.Tipo = payload.Tipo ?? payload.tipo;
+    payload.cp = payload.cp ?? payload.CP;
+    payload.fecha = payload.fecha ?? payload.Fecha;
+    payload.Sup_m2 = payload.Sup_m2 ?? payload.sup_m2;
+    payload.Valor_total = payload.Valor_total ?? payload.valor_total;
+    payload.Eur_m2 = payload.Eur_m2 ?? payload.eur_m2;
+    const errores = validarTasacion(payload);
+    if (errores.length > 0) {
+      return res.status(400).json({ error: "Datos invalidos", detalles: errores });
+    }
+
+    const ejerciente = await EjercienteModel.findOne({ Num_api: numApi })
+      .select(EJERCIENTE_ATTRIBUTES.join(" "))
+      .lean();
+
+    if (!ejerciente) {
+      return res.status(404).json({ error: "Ejerciente no encontrado" });
+    }
+
+    const normalized = {
+      Num_api: numApi,
+      Tipo: payload.Tipo,
+      cp: payload.cp,
+      fecha: payload.fecha,
+      Sup_m2: payload.Sup_m2,
+      Valor_total: payload.Valor_total,
+      Eur_m2: payload.Eur_m2,
+    };
+
+    if (normalized.fecha) {
+      normalized.fecha = new Date(normalized.fecha);
+    }
+
+    ["Tipo", "cp"].forEach((field) => {
+      const value = normalized[field];
+      if (value === undefined || value === null) {
+        delete normalized[field];
+      } else {
+        const trimmed = String(value).trim();
+        if (trimmed) {
+          if (field === "Tipo") {
+            normalized[field] = trimmed;
+          } else if (field === "cp") {
+            normalized[field] = trimmed;
+          }
+        } else {
+          delete normalized[field];
+        }
+      }
+    });
+
+    if (normalized.cp && !/^\d+$/.test(normalized.cp)) {
+      return res.status(400).json({ error: "cp debe contener solo digitos" });
+    }
+
+    ["Sup_m2", "Valor_total", "Eur_m2"].forEach((field) => {
+      const value = normalized[field];
+      if (value !== undefined && value !== null && value !== "") {
+        normalized[field] = Number(value);
+      } else {
+        delete normalized[field];
+      }
+    });
+
+    if (!normalized.cp) {
+      delete normalized.cp;
+    }
+
+    const tasacion = await TasacionesModel.create(normalized);
+
+    return res
+      .status(201)
+      .json(
+        sanitizeTasacion({
+          ...(tasacion.toJSON ? tasacion.toJSON() : tasacion),
+          ejerciente,
+        })
+      );
   } catch (error) {
     return handleControllerError(res, error);
   }

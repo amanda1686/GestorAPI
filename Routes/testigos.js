@@ -1,11 +1,9 @@
 ﻿import { Router } from "express";
-import { listarTestigos } from "../Controllers/testigos.js";
-import { authenticate } from "../middleware/authMiddleware.js";
+import { listarTestigos, crearTestigo } from "../Controllers/testigos.js";
 
 const router = Router();
 
-router.use(authenticate);
-
 router.get("/", listarTestigos);
+router.post("/", crearTestigo);
 
 export default router;

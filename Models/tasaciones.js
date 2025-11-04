@@ -63,13 +63,14 @@ export default TasacionesModel;
 export function validarTasacion(data = {}) {
   const errores = [];
 
-  const cp = data.cp;
+  const cp = data.cp ?? data.CP;
   if (cp && !/^\d{4,10}$/.test(String(cp))) {
     errores.push("cp debe contener solo digitos (4-10 caracteres)");
   }
 
-  if (data.fecha) {
-    const parsedDate = Date.parse(data.fecha);
+  const fecha = data.fecha ?? data.Fecha;
+  if (fecha) {
+    const parsedDate = Date.parse(fecha);
     if (Number.isNaN(parsedDate)) {
       errores.push("fecha debe tener un formato valido (YYYY-MM-DD)");
     }
