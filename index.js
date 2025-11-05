@@ -11,7 +11,10 @@ import notificationsRoutes from "./Routes/notifications.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
-const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:8080")
+const allowedOrigins = (
+  process.env.CORS_ORIGINS
+  ?? "http://localhost:8080,https://gestor-1-pa0j.onrender.com"
+)
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
